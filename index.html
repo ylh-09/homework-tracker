@@ -42,17 +42,14 @@
     }
     .row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
     label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
-    input, select, textarea, button {
-      font: inherit;
-    }
-    input, select, textarea {
+    input, select, button { font: inherit; }
+    input, select {
       border: 1px solid #d1d5db;
       border-radius: 10px;
       padding: 0.55rem 0.7rem;
       min-width: 0;
       background: #fff;
     }
-    textarea { width: 100%; min-height: 70px; resize: vertical; }
     button {
       border: none;
       border-radius: 10px;
@@ -70,15 +67,6 @@
     .tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
     .tabs button { background: #e5e7eb; color: var(--text); }
     .tabs button.active { background: var(--primary); color: #fff; }
-    .hw-list { display: grid; gap: 0.5rem; }
-    .hw-item {
-      display: flex; justify-content: space-between; gap: 0.75rem; align-items: center;
-      border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.85rem;
-      cursor: pointer; background: #fafafa;
-    }
-    .hw-item.active { border-color: var(--primary); background: #eff6ff; }
-    .hw-item strong { display: block; }
-    .meta { color: var(--muted); font-size: 0.85rem; }
     .badge {
       display: inline-block; border-radius: 999px; padding: 0.15rem 0.55rem;
       font-size: 0.78rem; font-weight: 700;
@@ -117,6 +105,21 @@
     th { color: var(--muted); font-size: 0.8rem; }
     .empty { color: var(--muted); padding: 1rem 0; }
     .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+    .sync {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
+      font-size: 0.9rem; color: var(--muted);
+    }
+    .sync .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; display: inline-block;
+    }
+    .sync.ok .dot { background: var(--ok); }
+    .sync.err .dot { background: var(--miss); }
+    .sync.busy .dot { background: var(--primary); animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: 0.35; } }
+    .banner {
+      background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412;
+      border-radius: 12px; padding: 0.75rem 0.9rem; margin-bottom: 1rem; font-size: 0.92rem;
+    }
     @media (max-width: 640px) {
       input[type="date"], input[type="text"], select { width: 100%; }
       .row label { flex: 1 1 100%; }
@@ -126,9 +129,25 @@
 <body>
   <header>
     <h1>2C 功課缺交紀錄</h1>
-    <p>標記「冇交」或「缺席所以冇交」· 資料存在呢部瀏覽器</p>
+    <p>標記「冇交」或「缺席所以冇交」· 資料雲端共用（Google Sheet）</p>
   </header>
   <div class="wrap">
+    <div id="setupBanner" class="banner" hidden>
+      雲端 API 未設定。請完成 Google Apps Script 部署後，將網址填入下框（或等我幫你設定）。
+      <div class="row" style="margin-top:0.6rem">
+        <label style="flex:1 1 280px">Apps Script Web App URL
+          <input id="apiUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec" />
+        </label>
+        <button id="saveApiBtn" type="button">儲存並載入</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="sync" id="syncStatus"><span class="dot"></span> <span id="syncText">準備中…</span>
+        <button id="reloadBtn" class="ghost" type="button" style="padding:0.35rem 0.7rem;font-size:0.85rem;margin-left:auto">重新載入</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>新增功課</h2>
       <div class="row">
@@ -136,7 +155,7 @@
         <label style="flex:1 1 220px">功課名稱 <input id="hwTitle" type="text" placeholder="例如：練習 3.2" /></label>
         <button id="addHwBtn" type="button">新增</button>
       </div>
-      <p class="note">新增後揀左側／上面嘅功課，再逐個同學標記狀態。</p>
+      <p class="note">新增後揀功課，再逐個同學標記狀態。改動會自動同步到雲端。</p>
     </div>
 
     <div class="card">
@@ -165,12 +184,17 @@
       <div id="tab-export" hidden>
         <p class="note">匯出 CSV，可用 Excel／Google Sheets 打開。</p>
         <button id="exportBtn" type="button">下載 CSV</button>
-        <button id="clearAllBtn" class="ghost" type="button">清除全部資料</button>
+        <a id="sheetLink" class="note" href="https://docs.google.com/spreadsheets/d/1KXrkpop043mzq_arPXkAzuzQ1wm8UmZRVvHPblHPKmY/edit" target="_blank" rel="noopener">打開後台 Google Sheet</a>
       </div>
     </div>
   </div>
 
   <script>
+    // Filled after Apps Script deploy. Can also be overridden via ?api= URL or localStorage.
+    const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbydAH3GxbVNUaeeMbtuhiC9I7tQWLpST7HTUl77qrIPrsq0X6zulmtdGmmm5VxJShq3zQ/exec";
+    const SHEET_URL = "https://docs.google.com/spreadsheets/d/1KXrkpop043mzq_arPXkAzuzQ1wm8UmZRVvHPblHPKmY/edit";
+    const API_STORE_KEY = "hw-tracker-2c-api-url";
+
     const STUDENTS = [
       { no: 1, name: "陳栩湄" },
       { no: 3, name: "張曉桐" },
@@ -199,9 +223,11 @@
       { no: 27, name: "莊緩緩" }
     ];
 
-    const STORAGE_KEY = "hw-tracker-2c-v1";
-    const state = load();
-    let currentHwId = state.homeworks[0]?.id || null;
+    let apiUrl = resolveApiUrl();
+    const state = { homeworks: [] };
+    let currentHwId = null;
+    let saveTimer = null;
+    let ready = false;
 
     const hwDate = document.getElementById("hwDate");
     const hwTitle = document.getElementById("hwTitle");
@@ -210,8 +236,22 @@
     const markSummary = document.getElementById("markSummary");
     const markEmpty = document.getElementById("markEmpty");
     const overviewBox = document.getElementById("overviewBox");
+    const syncStatus = document.getElementById("syncStatus");
+    const syncText = document.getElementById("syncText");
+    const setupBanner = document.getElementById("setupBanner");
 
     hwDate.value = todayStr();
+
+    function resolveApiUrl() {
+      const q = new URLSearchParams(location.search).get("api");
+      if (q) {
+        localStorage.setItem(API_STORE_KEY, q);
+        return q.trim();
+      }
+      const stored = localStorage.getItem(API_STORE_KEY);
+      if (stored) return stored.trim();
+      return (DEFAULT_API_URL || "").trim();
+    }
 
     function todayStr() {
       const d = new Date();
@@ -224,20 +264,70 @@
       return "hw_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     }
 
-    function load() {
+    function setSync(kind, text) {
+      syncStatus.className = "sync " + (kind || "");
+      syncText.textContent = text;
+    }
+
+    function showSetup(needed) {
+      setupBanner.hidden = !needed;
+      if (needed) document.getElementById("apiUrlInput").value = apiUrl || "";
+    }
+
+    async function cloudLoad() {
+      if (!apiUrl) {
+        showSetup(true);
+        setSync("err", "未設定雲端 API");
+        return false;
+      }
+      showSetup(false);
+      setSync("busy", "由雲端載入中…");
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return { homeworks: [] };
-        const parsed = JSON.parse(raw);
-        if (!parsed.homeworks) return { homeworks: [] };
-        return parsed;
-      } catch (_) {
-        return { homeworks: [] };
+        const res = await fetch(apiUrl, { method: "GET", redirect: "follow" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        state.homeworks = Array.isArray(data.homeworks) ? data.homeworks : [];
+        if (!currentHwId || !state.homeworks.some((h) => h.id === currentHwId)) {
+          currentHwId = state.homeworks[0]?.id || null;
+        }
+        ready = true;
+        setSync("ok", "已同步 · " + new Date().toLocaleTimeString());
+        renderMark();
+        renderOverview();
+        return true;
+      } catch (err) {
+        ready = false;
+        setSync("err", "載入失敗：" + err.message);
+        showSetup(true);
+        return false;
       }
     }
 
-    function save() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    async function cloudSave() {
+      if (!apiUrl || !ready) return;
+      setSync("busy", "儲存到雲端…");
+      try {
+        // Apps Script redirects POST; send as text/plain, then verify with GET.
+        await fetch(apiUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ homeworks: state.homeworks })
+        });
+        await new Promise((r) => setTimeout(r, 400));
+        const res = await fetch(apiUrl, { method: "GET", redirect: "follow", cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        if (!Array.isArray(data.homeworks)) throw new Error("驗證失敗");
+        setSync("ok", "已同步 · " + new Date().toLocaleTimeString());
+      } catch (err) {
+        setSync("err", "儲存失敗：" + err.message);
+      }
+    }
+
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(cloudSave, 350);
     }
 
     function currentHw() {
@@ -254,7 +344,7 @@
       if (!hw.records) hw.records = {};
       if (status === "ok") delete hw.records[String(no)];
       else hw.records[String(no)] = status;
-      save();
+      scheduleSave();
       renderMark();
       renderOverview();
     }
@@ -334,7 +424,6 @@
         overviewBox.innerHTML = '<p class="empty">未有紀錄。</p>';
         return;
       }
-      // Per-student totals
       const totals = {};
       STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, items: [] }; });
       state.homeworks.forEach((h) => {
@@ -348,9 +437,11 @@
       });
 
       let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>詳情</th></tr></thead><tbody>';
+      let any = false;
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
         if (!t.miss && !t.absent) return;
+        any = true;
         const detail = t.items.map((i) =>
           i.date + " " + i.title + "（" + (i.status === "miss" ? "冇交" : "缺席") + "）"
         ).join("； ");
@@ -358,10 +449,7 @@
           '</td><td>' + t.absent + '</td><td>' + detail + '</td></tr>';
       });
       html += '</tbody></table>';
-
-      const any = STUDENTS.some((s) => totals[s.no].miss || totals[s.no].absent);
-      if (!any) html = '<p class="empty">暫時未有缺交紀錄。</p>';
-      overviewBox.innerHTML = html;
+      overviewBox.innerHTML = any ? html : '<p class="empty">暫時未有缺交紀錄。</p>';
     }
 
     function exportCsv() {
@@ -392,13 +480,14 @@
     }
 
     document.getElementById("addHwBtn").addEventListener("click", () => {
+      if (!ready) return alert("雲端未就緒，請先設定 API。");
       const date = hwDate.value || todayStr();
       const title = (hwTitle.value || "").trim() || "功課";
       const hw = { id: uid(), date, title, records: {} };
       state.homeworks.unshift(hw);
       currentHwId = hw.id;
       hwTitle.value = "";
-      save();
+      scheduleSave();
       renderMark();
       renderOverview();
     });
@@ -414,7 +503,7 @@
       if (!confirm("刪除「" + hw.date + " · " + hw.title + "」？")) return;
       state.homeworks = state.homeworks.filter((h) => h.id !== hw.id);
       currentHwId = state.homeworks[0]?.id || null;
-      save();
+      scheduleSave();
       renderMark();
       renderOverview();
     });
@@ -438,17 +527,16 @@
     });
 
     document.getElementById("exportBtn").addEventListener("click", exportCsv);
-    document.getElementById("clearAllBtn").addEventListener("click", () => {
-      if (!confirm("清除全部功課同標記？呢個動作唔可以復原。")) return;
-      state.homeworks = [];
-      currentHwId = null;
-      save();
-      renderMark();
-      renderOverview();
+    document.getElementById("reloadBtn").addEventListener("click", cloudLoad);
+    document.getElementById("saveApiBtn").addEventListener("click", () => {
+      const v = document.getElementById("apiUrlInput").value.trim();
+      if (!v) return alert("請貼上 Web App URL");
+      apiUrl = v;
+      localStorage.setItem(API_STORE_KEY, v);
+      cloudLoad();
     });
 
-    renderMark();
-    renderOverview();
+    cloudLoad();
   </script>
 </body>
 </html>
