@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2C 功課缺交紀錄</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #fff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --primary: #2563eb;
+      --miss: #dc2626;
+      --absent: #d97706;
+      --ok: #059669;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang HK", "Noto Sans TC", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+    }
+    header {
+      background: #111827;
+      color: #fff;
+      padding: 1rem 1.25rem;
+    }
+    header h1 { margin: 0; font-size: 1.25rem; }
+    header p { margin: 0.25rem 0 0; opacity: 0.75; font-size: 0.9rem; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 1rem 1rem 2.5rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; }
+    label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+    input, select, textarea, button {
+      font: inherit;
+    }
+    input, select, textarea {
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      padding: 0.55rem 0.7rem;
+      min-width: 0;
+      background: #fff;
+    }
+    textarea { width: 100%; min-height: 70px; resize: vertical; }
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 0.6rem 0.95rem;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.secondary { background: #374151; }
+    button.ghost { background: #fff; color: var(--text); border: 1px solid var(--line); }
+    button.danger { background: var(--miss); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    h2 { margin: 0 0 0.75rem; font-size: 1.05rem; }
+    .tabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+    .tabs button { background: #e5e7eb; color: var(--text); }
+    .tabs button.active { background: var(--primary); color: #fff; }
+    .hw-list { display: grid; gap: 0.5rem; }
+    .hw-item {
+      display: flex; justify-content: space-between; gap: 0.75rem; align-items: center;
+      border: 1px solid var(--line); border-radius: 12px; padding: 0.7rem 0.85rem;
+      cursor: pointer; background: #fafafa;
+    }
+    .hw-item.active { border-color: var(--primary); background: #eff6ff; }
+    .hw-item strong { display: block; }
+    .meta { color: var(--muted); font-size: 0.85rem; }
+    .badge {
+      display: inline-block; border-radius: 999px; padding: 0.15rem 0.55rem;
+      font-size: 0.78rem; font-weight: 700;
+    }
+    .badge.miss { background: #fee2e2; color: var(--miss); }
+    .badge.absent { background: #ffedd5; color: var(--absent); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 0.55rem;
+    }
+    .student {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.65rem;
+      background: #fff;
+    }
+    .student.miss { border-color: #fecaca; background: #fff7f7; }
+    .student.absent { border-color: #fed7aa; background: #fffbeb; }
+    .student .name { font-weight: 700; }
+    .student .no { color: var(--muted); font-size: 0.85rem; }
+    .actions { display: flex; gap: 0.35rem; margin-top: 0.5rem; flex-wrap: wrap; }
+    .actions button { padding: 0.35rem 0.55rem; font-size: 0.82rem; }
+    .actions .miss-btn { background: var(--miss); }
+    .actions .absent-btn { background: var(--absent); }
+    .actions .ok-btn { background: var(--ok); }
+    .summary { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
+    .stat {
+      background: #f9fafb; border: 1px solid var(--line); border-radius: 12px;
+      padding: 0.55rem 0.8rem; min-width: 110px;
+    }
+    .stat b { display: block; font-size: 1.25rem; }
+    .stat span { color: var(--muted); font-size: 0.8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { border-bottom: 1px solid var(--line); padding: 0.55rem 0.4rem; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 0.8rem; }
+    .empty { color: var(--muted); padding: 1rem 0; }
+    .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+    @media (max-width: 640px) {
+      input[type="date"], input[type="text"], select { width: 100%; }
+      .row label { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>2C 功課缺交紀錄</h1>
+    <p>標記「冇交」或「缺席所以冇交」· 資料存在呢部瀏覽器</p>
+  </header>
+  <div class="wrap">
+    <div class="card">
+      <h2>新增功課</h2>
+      <div class="row">
+        <label>日期 <input id="hwDate" type="date" /></label>
+        <label style="flex:1 1 220px">功課名稱 <input id="hwTitle" type="text" placeholder="例如：練習 3.2" /></label>
+        <button id="addHwBtn" type="button">新增</button>
+      </div>
+      <p class="note">新增後揀左側／上面嘅功課，再逐個同學標記狀態。</p>
+    </div>
+
+    <div class="card">
+      <div class="tabs">
+        <button type="button" class="active" data-tab="mark">標記同學</button>
+        <button type="button" data-tab="overview">總覽</button>
+        <button type="button" data-tab="export">匯出</button>
+      </div>
+
+      <div id="tab-mark">
+        <div class="row" style="margin-bottom:0.8rem">
+          <label style="flex:1 1 260px">揀功課
+            <select id="hwSelect"></select>
+          </label>
+          <button id="deleteHwBtn" class="danger" type="button">刪呢份功課</button>
+        </div>
+        <div id="markSummary" class="summary"></div>
+        <div id="studentGrid" class="grid"></div>
+        <p id="markEmpty" class="empty" hidden>未有功課，請先新增。</p>
+      </div>
+
+      <div id="tab-overview" hidden>
+        <div id="overviewBox"></div>
+      </div>
+
+      <div id="tab-export" hidden>
+        <p class="note">匯出 CSV，可用 Excel／Google Sheets 打開。</p>
+        <button id="exportBtn" type="button">下載 CSV</button>
+        <button id="clearAllBtn" class="ghost" type="button">清除全部資料</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STUDENTS = [
+      { no: 1, name: "陳栩湄" },
+      { no: 3, name: "張曉桐" },
+      { no: 4, name: "張苡僑" },
+      { no: 5, name: "戴芷茵" },
+      { no: 6, name: "何婉詩" },
+      { no: 7, name: "林穎言" },
+      { no: 8, name: "羅映逸" },
+      { no: 9, name: "黎妍朵" },
+      { no: 10, name: "邱詠怡" },
+      { no: 11, name: "楊芍盈" },
+      { no: 12, name: "陳俊庭" },
+      { no: 13, name: "蔡柏希" },
+      { no: 14, name: "劉逸藍" },
+      { no: 15, name: "羅錫揚" },
+      { no: 16, name: "林宣瑜" },
+      { no: 17, name: "呂梓僥" },
+      { no: 18, name: "黃靖珈" },
+      { no: 19, name: "黃澍峻" },
+      { no: 20, name: "黃子翀" },
+      { no: 21, name: "胡梓謙" },
+      { no: 22, name: "吳瑋" },
+      { no: 24, name: "朱俊業" },
+      { no: 25, name: "鄒賢知" },
+      { no: 26, name: "陳利恩" },
+      { no: 27, name: "莊緩緩" }
+    ];
+
+    const STORAGE_KEY = "hw-tracker-2c-v1";
+    const state = load();
+    let currentHwId = state.homeworks[0]?.id || null;
+
+    const hwDate = document.getElementById("hwDate");
+    const hwTitle = document.getElementById("hwTitle");
+    const hwSelect = document.getElementById("hwSelect");
+    const studentGrid = document.getElementById("studentGrid");
+    const markSummary = document.getElementById("markSummary");
+    const markEmpty = document.getElementById("markEmpty");
+    const overviewBox = document.getElementById("overviewBox");
+
+    hwDate.value = todayStr();
+
+    function todayStr() {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return d.getFullYear() + "-" + m + "-" + day;
+    }
+
+    function uid() {
+      return "hw_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return { homeworks: [] };
+        const parsed = JSON.parse(raw);
+        if (!parsed.homeworks) return { homeworks: [] };
+        return parsed;
+      } catch (_) {
+        return { homeworks: [] };
+      }
+    }
+
+    function save() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function currentHw() {
+      return state.homeworks.find((h) => h.id === currentHwId) || null;
+    }
+
+    function statusOf(hw, no) {
+      return (hw && hw.records && hw.records[String(no)]) || "ok";
+    }
+
+    function setStatus(no, status) {
+      const hw = currentHw();
+      if (!hw) return;
+      if (!hw.records) hw.records = {};
+      if (status === "ok") delete hw.records[String(no)];
+      else hw.records[String(no)] = status;
+      save();
+      renderMark();
+      renderOverview();
+    }
+
+    function counts(hw) {
+      let miss = 0, absent = 0;
+      STUDENTS.forEach((s) => {
+        const st = statusOf(hw, s.no);
+        if (st === "miss") miss += 1;
+        if (st === "absent") absent += 1;
+      });
+      return { miss, absent, ok: STUDENTS.length - miss - absent };
+    }
+
+    function renderSelect() {
+      hwSelect.innerHTML = "";
+      if (!state.homeworks.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "（未有功課）";
+        hwSelect.appendChild(opt);
+        return;
+      }
+      state.homeworks
+        .slice()
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+        .forEach((h) => {
+          const c = counts(h);
+          const opt = document.createElement("option");
+          opt.value = h.id;
+          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "）";
+          hwSelect.appendChild(opt);
+        });
+      if (!currentHwId || !state.homeworks.some((h) => h.id === currentHwId)) {
+        currentHwId = state.homeworks[0].id;
+      }
+      hwSelect.value = currentHwId;
+    }
+
+    function renderMark() {
+      renderSelect();
+      const hw = currentHw();
+      if (!hw) {
+        studentGrid.innerHTML = "";
+        markSummary.innerHTML = "";
+        markEmpty.hidden = false;
+        return;
+      }
+      markEmpty.hidden = true;
+      const c = counts(hw);
+      markSummary.innerHTML =
+        '<div class="stat"><b>' + c.miss + '</b><span>冇交功課</span></div>' +
+        '<div class="stat"><b>' + c.absent + '</b><span>缺席冇交</span></div>' +
+        '<div class="stat"><b>' + c.ok + '</b><span>已交／正常</span></div>';
+
+      studentGrid.innerHTML = "";
+      STUDENTS.forEach((s) => {
+        const st = statusOf(hw, s.no);
+        const div = document.createElement("div");
+        div.className = "student" + (st === "miss" ? " miss" : st === "absent" ? " absent" : "");
+        div.innerHTML =
+          '<div class="no">2C-' + s.no + '</div>' +
+          '<div class="name">' + s.name + '</div>' +
+          (st === "miss" ? '<span class="badge miss">冇交</span>' :
+           st === "absent" ? '<span class="badge absent">缺席冇交</span>' : '') +
+          '<div class="actions">' +
+          '<button type="button" class="miss-btn" data-no="' + s.no + '" data-st="miss">冇交</button>' +
+          '<button type="button" class="absent-btn" data-no="' + s.no + '" data-st="absent">缺席</button>' +
+          '<button type="button" class="ok-btn" data-no="' + s.no + '" data-st="ok">清除</button>' +
+          '</div>';
+        studentGrid.appendChild(div);
+      });
+    }
+
+    function renderOverview() {
+      if (!state.homeworks.length) {
+        overviewBox.innerHTML = '<p class="empty">未有紀錄。</p>';
+        return;
+      }
+      // Per-student totals
+      const totals = {};
+      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, items: [] }; });
+      state.homeworks.forEach((h) => {
+        STUDENTS.forEach((s) => {
+          const st = statusOf(h, s.no);
+          if (st === "miss" || st === "absent") {
+            totals[s.no][st] += 1;
+            totals[s.no].items.push({ date: h.date, title: h.title, status: st });
+          }
+        });
+      });
+
+      let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>詳情</th></tr></thead><tbody>';
+      STUDENTS.forEach((s) => {
+        const t = totals[s.no];
+        if (!t.miss && !t.absent) return;
+        const detail = t.items.map((i) =>
+          i.date + " " + i.title + "（" + (i.status === "miss" ? "冇交" : "缺席") + "）"
+        ).join("； ");
+        html += '<tr><td>2C-' + s.no + '</td><td>' + s.name + '</td><td>' + t.miss +
+          '</td><td>' + t.absent + '</td><td>' + detail + '</td></tr>';
+      });
+      html += '</tbody></table>';
+
+      const any = STUDENTS.some((s) => totals[s.no].miss || totals[s.no].absent);
+      if (!any) html = '<p class="empty">暫時未有缺交紀錄。</p>';
+      overviewBox.innerHTML = html;
+    }
+
+    function exportCsv() {
+      const rows = [["日期", "功課", "學號", "姓名", "狀態"]];
+      state.homeworks
+        .slice()
+        .sort((a, b) => (a.date > b.date ? 1 : -1))
+        .forEach((h) => {
+          STUDENTS.forEach((s) => {
+            const st = statusOf(h, s.no);
+            if (st === "ok") return;
+            rows.push([
+              h.date,
+              h.title,
+              "2C-" + s.no,
+              s.name,
+              st === "miss" ? "冇交功課" : "缺席所以冇交"
+            ]);
+          });
+        });
+      const csv = rows.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");
+      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "2C-功課缺交紀錄.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById("addHwBtn").addEventListener("click", () => {
+      const date = hwDate.value || todayStr();
+      const title = (hwTitle.value || "").trim() || "功課";
+      const hw = { id: uid(), date, title, records: {} };
+      state.homeworks.unshift(hw);
+      currentHwId = hw.id;
+      hwTitle.value = "";
+      save();
+      renderMark();
+      renderOverview();
+    });
+
+    hwSelect.addEventListener("change", () => {
+      currentHwId = hwSelect.value || null;
+      renderMark();
+    });
+
+    document.getElementById("deleteHwBtn").addEventListener("click", () => {
+      const hw = currentHw();
+      if (!hw) return;
+      if (!confirm("刪除「" + hw.date + " · " + hw.title + "」？")) return;
+      state.homeworks = state.homeworks.filter((h) => h.id !== hw.id);
+      currentHwId = state.homeworks[0]?.id || null;
+      save();
+      renderMark();
+      renderOverview();
+    });
+
+    studentGrid.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-no]");
+      if (!btn) return;
+      setStatus(Number(btn.dataset.no), btn.dataset.st);
+    });
+
+    document.querySelectorAll(".tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tabs button").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const tab = btn.dataset.tab;
+        document.getElementById("tab-mark").hidden = tab !== "mark";
+        document.getElementById("tab-overview").hidden = tab !== "overview";
+        document.getElementById("tab-export").hidden = tab !== "export";
+        if (tab === "overview") renderOverview();
+      });
+    });
+
+    document.getElementById("exportBtn").addEventListener("click", exportCsv);
+    document.getElementById("clearAllBtn").addEventListener("click", () => {
+      if (!confirm("清除全部功課同標記？呢個動作唔可以復原。")) return;
+      state.homeworks = [];
+      currentHwId = null;
+      save();
+      renderMark();
+      renderOverview();
+    });
+
+    renderMark();
+    renderOverview();
+  </script>
+</body>
+</html>
