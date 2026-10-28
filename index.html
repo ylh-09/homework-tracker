@@ -183,7 +183,11 @@
 
       <div id="tab-export" hidden>
         <p class="note">匯出 CSV，可用 Excel／Google Sheets 打開。</p>
-        <button id="exportBtn" type="button">下載 CSV</button>
+        <div class="row" style="margin-bottom:0.6rem">
+          <button id="exportBtn" type="button">下載 CSV（按功課）</button>
+          <button id="exportByStudentBtn" type="button" class="secondary">下載 CSV（按學生 · 欠交一覽）</button>
+        </div>
+        <p class="note">「按功課」：每一項欠交一列。「按學生」：每位同學一列，旁邊列出全部欠交功課。</p>
         <a id="sheetLink" class="note" href="https://docs.google.com/spreadsheets/d/1KXrkpop043mzq_arPXkAzuzQ1wm8UmZRVvHPblHPKmY/edit" target="_blank" rel="noopener">打開後台 Google Sheet</a>
       </div>
     </div>
@@ -479,6 +483,44 @@
       URL.revokeObjectURL(a.href);
     }
 
+    function exportByStudentCsv() {
+      const totals = {};
+      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, items: [] }; });
+      state.homeworks.forEach((h) => {
+        STUDENTS.forEach((s) => {
+          const st = statusOf(h, s.no);
+          if (st === "miss" || st === "absent") {
+            totals[s.no][st] += 1;
+            totals[s.no].items.push({ date: h.date, title: h.title, status: st });
+          }
+        });
+      });
+
+      const rows = [["學號", "姓名", "冇交次數", "缺席冇交次數", "全部欠交功課"]];
+      STUDENTS.forEach((s) => {
+        const t = totals[s.no];
+        if (!t.miss && !t.absent) return;
+        const detail = t.items.map((i) =>
+          i.date + " " + i.title + "（" + (i.status === "miss" ? "冇交" : "缺席") + "）"
+        ).join("； ");
+        rows.push([
+          "2C-" + s.no,
+          s.name,
+          t.miss,
+          t.absent,
+          detail
+        ]);
+      });
+
+      const csv = rows.map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(",")).join("\n");
+      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "2C-按學生欠交一覽.csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
     document.getElementById("addHwBtn").addEventListener("click", () => {
       if (!ready) return alert("雲端未就緒，請先設定 API。");
       const date = hwDate.value || todayStr();
@@ -527,6 +569,7 @@
     });
 
     document.getElementById("exportBtn").addEventListener("click", exportCsv);
+    document.getElementById("exportByStudentBtn").addEventListener("click", exportByStudentCsv);
     document.getElementById("reloadBtn").addEventListener("click", cloudLoad);
     document.getElementById("saveApiBtn").addEventListener("click", () => {
       const v = document.getElementById("apiUrlInput").value.trim();
