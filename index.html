@@ -14,6 +14,7 @@
       --primary: #2563eb;
       --miss: #dc2626;
       --absent: #d97706;
+      --amend: #7c3aed;
       --ok: #059669;
     }
     * { box-sizing: border-box; }
@@ -73,6 +74,7 @@
     }
     .badge.miss { background: #fee2e2; color: var(--miss); }
     .badge.absent { background: #ffedd5; color: var(--absent); }
+    .badge.amend { background: #ede9fe; color: var(--amend); }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -86,12 +88,14 @@
     }
     .student.miss { border-color: #fecaca; background: #fff7f7; }
     .student.absent { border-color: #fed7aa; background: #fffbeb; }
+    .student.amend { border-color: #ddd6fe; background: #f5f3ff; }
     .student .name { font-weight: 700; }
     .student .no { color: var(--muted); font-size: 0.85rem; }
     .actions { display: flex; gap: 0.35rem; margin-top: 0.5rem; flex-wrap: wrap; }
     .actions button { padding: 0.35rem 0.55rem; font-size: 0.82rem; }
     .actions .miss-btn { background: var(--miss); }
     .actions .absent-btn { background: var(--absent); }
+    .actions .amend-btn { background: var(--amend); }
     .actions .ok-btn { background: var(--ok); }
     .summary { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
     .stat {
@@ -129,7 +133,7 @@
 <body>
   <header>
     <h1>2C 功課缺交紀錄</h1>
-    <p>標記「冇交」或「缺席所以冇交」· 資料雲端共用（Google Sheet）</p>
+    <p>標記「冇交」「缺席冇交」或「未做好改正」· 資料雲端共用（Google Sheet）</p>
   </header>
   <div class="wrap">
     <div id="setupBanner" class="banner" hidden>
@@ -354,14 +358,33 @@
       renderOverview();
     }
 
+    function statusLabel(st) {
+      if (st === "miss") return "冇交";
+      if (st === "absent") return "缺席";
+      if (st === "amend") return "未做好改正";
+      return "";
+    }
+
+    function statusLabelCsv(st) {
+      if (st === "miss") return "冇交功課";
+      if (st === "absent") return "缺席所以冇交";
+      if (st === "amend") return "未做好改正";
+      return "";
+    }
+
+    function isIssueStatus(st) {
+      return st === "miss" || st === "absent" || st === "amend";
+    }
+
     function counts(hw) {
-      let miss = 0, absent = 0;
+      let miss = 0, absent = 0, amend = 0;
       STUDENTS.forEach((s) => {
         const st = statusOf(hw, s.no);
         if (st === "miss") miss += 1;
         if (st === "absent") absent += 1;
+        if (st === "amend") amend += 1;
       });
-      return { miss, absent, ok: STUDENTS.length - miss - absent };
+      return { miss, absent, amend, ok: STUDENTS.length - miss - absent - amend };
     }
 
     function renderSelect() {
@@ -380,7 +403,7 @@
           const c = counts(h);
           const opt = document.createElement("option");
           opt.value = h.id;
-          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "）";
+          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "／改正 " + c.amend + "）";
           hwSelect.appendChild(opt);
         });
       if (!currentHwId || !state.homeworks.some((h) => h.id === currentHwId)) {
@@ -403,21 +426,24 @@
       markSummary.innerHTML =
         '<div class="stat"><b>' + c.miss + '</b><span>冇交功課</span></div>' +
         '<div class="stat"><b>' + c.absent + '</b><span>缺席冇交</span></div>' +
+        '<div class="stat"><b>' + c.amend + '</b><span>未做好改正</span></div>' +
         '<div class="stat"><b>' + c.ok + '</b><span>已交／正常</span></div>';
 
       studentGrid.innerHTML = "";
       STUDENTS.forEach((s) => {
         const st = statusOf(hw, s.no);
         const div = document.createElement("div");
-        div.className = "student" + (st === "miss" ? " miss" : st === "absent" ? " absent" : "");
+        div.className = "student" + (st === "miss" ? " miss" : st === "absent" ? " absent" : st === "amend" ? " amend" : "");
         div.innerHTML =
           '<div class="no">2C-' + s.no + '</div>' +
           '<div class="name">' + s.name + '</div>' +
           (st === "miss" ? '<span class="badge miss">冇交</span>' :
-           st === "absent" ? '<span class="badge absent">缺席冇交</span>' : '') +
+           st === "absent" ? '<span class="badge absent">缺席冇交</span>' :
+           st === "amend" ? '<span class="badge amend">未做好改正</span>' : '') +
           '<div class="actions">' +
           '<button type="button" class="miss-btn" data-no="' + s.no + '" data-st="miss">冇交</button>' +
           '<button type="button" class="absent-btn" data-no="' + s.no + '" data-st="absent">缺席</button>' +
+          '<button type="button" class="amend-btn" data-no="' + s.no + '" data-st="amend">未做好改正</button>' +
           '<button type="button" class="ok-btn" data-no="' + s.no + '" data-st="ok">清除</button>' +
           '</div>';
         studentGrid.appendChild(div);
@@ -430,28 +456,28 @@
         return;
       }
       const totals = {};
-      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, items: [] }; });
+      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, amend: 0, items: [] }; });
       state.homeworks.forEach((h) => {
         STUDENTS.forEach((s) => {
           const st = statusOf(h, s.no);
-          if (st === "miss" || st === "absent") {
+          if (isIssueStatus(st)) {
             totals[s.no][st] += 1;
             totals[s.no].items.push({ date: h.date, title: h.title, status: st });
           }
         });
       });
 
-      let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>詳情</th></tr></thead><tbody>';
+      let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>未做好改正</th><th>詳情</th></tr></thead><tbody>';
       let any = false;
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent) return;
+        if (!t.miss && !t.absent && !t.amend) return;
         any = true;
         const detail = t.items.map((i) =>
-          i.date + " " + i.title + "（" + (i.status === "miss" ? "冇交" : "缺席") + "）"
+          i.date + " " + i.title + "（" + statusLabel(i.status) + "）"
         ).join("； ");
         html += '<tr><td>2C-' + s.no + '</td><td>' + s.name + '</td><td>' + t.miss +
-          '</td><td>' + t.absent + '</td><td>' + detail + '</td></tr>';
+          '</td><td>' + t.absent + '</td><td>' + t.amend + '</td><td>' + detail + '</td></tr>';
       });
       html += '</tbody></table>';
       overviewBox.innerHTML = any ? html : '<p class="empty">暫時未有缺交紀錄。</p>';
@@ -471,7 +497,7 @@
               h.title,
               "2C-" + s.no,
               s.name,
-              st === "miss" ? "冇交功課" : "缺席所以冇交"
+              statusLabelCsv(st)
             ]);
           });
         });
@@ -486,11 +512,11 @@
 
     function collectByStudentTotals() {
       const totals = {};
-      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, items: [] }; });
+      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, amend: 0, items: [] }; });
       state.homeworks.forEach((h) => {
         STUDENTS.forEach((s) => {
           const st = statusOf(h, s.no);
-          if (st === "miss" || st === "absent") {
+          if (isIssueStatus(st)) {
             totals[s.no][st] += 1;
             totals[s.no].items.push({ date: h.date, title: h.title, status: st });
           }
@@ -509,18 +535,19 @@
 
     function exportByStudentCsv() {
       const totals = collectByStudentTotals();
-      const rows = [["學號", "姓名", "冇交次數", "缺席冇交次數", "全部欠交功課"]];
+      const rows = [["學號", "姓名", "冇交次數", "缺席冇交次數", "未做好改正次數", "全部欠交功課"]];
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent) return;
+        if (!t.miss && !t.absent && !t.amend) return;
         const detail = t.items.map((i) =>
-          i.date + " " + i.title + "（" + (i.status === "miss" ? "冇交" : "缺席") + "）"
+          i.date + " " + i.title + "（" + statusLabel(i.status) + "）"
         ).join("； ");
         rows.push([
           "2C-" + s.no,
           s.name,
           t.miss,
           t.absent,
+          t.amend,
           detail
         ]);
       });
@@ -539,10 +566,10 @@
       const bodyRows = [];
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent) return;
+        if (!t.miss && !t.absent && !t.amend) return;
         const items = t.items.map((i) =>
           "<li>" + i.date + " " + escapeHtml(i.title) +
-          "（" + (i.status === "miss" ? "冇交" : "缺席") + "）</li>"
+          "（" + statusLabel(i.status) + "）</li>"
         ).join("");
         bodyRows.push(
           "<tr>" +
@@ -550,6 +577,7 @@
           "<td class=\"name\">" + escapeHtml(s.name) + "</td>" +
           "<td class=\"n\">" + t.miss + "</td>" +
           "<td class=\"n\">" + t.absent + "</td>" +
+          "<td class=\"n\">" + t.amend + "</td>" +
           "<td class=\"items\"><ul>" + items + "</ul></td>" +
           "</tr>"
         );
@@ -579,10 +607,10 @@
         "table{width:100%;border-collapse:collapse;table-layout:fixed}" +
         "th,td{border:1px solid #333;padding:.28rem .35rem;vertical-align:top}" +
         "th{background:#f3f4f6;font-size:10pt;text-align:left}" +
-        "td.no{width:9%;white-space:nowrap;font-weight:700}" +
-        "td.name{width:12%;white-space:nowrap;font-weight:700}" +
+        "td.no{width:8%;white-space:nowrap;font-weight:700}" +
+        "td.name{width:11%;white-space:nowrap;font-weight:700}" +
         "td.n{width:7%;text-align:center;white-space:nowrap}" +
-        "td.items{width:65%;font-size:9.5pt}" +
+        "td.items{width:60%;font-size:9.5pt}" +
         "td.items ul{margin:0;padding-left:1.05rem}" +
         "td.items li{margin:.05rem 0}" +
         ".hint{margin-top:.45rem;color:#666;font-size:9pt}" +
@@ -590,7 +618,7 @@
         "</style></head><body>" +
         "<h1>2C 按學生 · 欠交一覽</h1>" +
         "<p class=\"meta\">列印時間：" + stamp + " · 只顯示有欠交嘅同學 · 共 " + bodyRows.length + " 人</p>" +
-        "<table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席</th><th>全部欠交功課</th></tr></thead><tbody>" +
+        "<table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席</th><th>未做好改正</th><th>全部欠交功課</th></tr></thead><tbody>" +
         bodyRows.join("") +
         "</tbody></table>" +
         "<p class=\"hint no-print\">預覽滿意就按「列印」。列印設定請揀 A4、橫向、縮放 100%。</p>" +
