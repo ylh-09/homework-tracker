@@ -15,6 +15,7 @@
       --miss: #dc2626;
       --absent: #d97706;
       --amend: #7c3aed;
+      --retake: #0d9488;
       --ok: #059669;
     }
     * { box-sizing: border-box; }
@@ -75,6 +76,7 @@
     .badge.miss { background: #fee2e2; color: var(--miss); }
     .badge.absent { background: #ffedd5; color: var(--absent); }
     .badge.amend { background: #ede9fe; color: var(--amend); }
+    .badge.retake { background: #ccfbf1; color: var(--retake); }
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -89,6 +91,7 @@
     .student.miss { border-color: #fecaca; background: #fff7f7; }
     .student.absent { border-color: #fed7aa; background: #fffbeb; }
     .student.amend { border-color: #ddd6fe; background: #f5f3ff; }
+    .student.retake-only { border-color: #99f6e4; background: #f0fdfa; }
     .student .name { font-weight: 700; }
     .student .no { color: var(--muted); font-size: 0.85rem; }
     .actions { display: flex; gap: 0.35rem; margin-top: 0.5rem; flex-wrap: wrap; }
@@ -96,6 +99,8 @@
     .actions .miss-btn { background: var(--miss); }
     .actions .absent-btn { background: var(--absent); }
     .actions .amend-btn { background: var(--amend); }
+    .actions .retake-btn { background: var(--retake); }
+    .actions .retake-btn.off { background: #fff; color: var(--retake); border: 1px solid #5eead4; }
     .actions .ok-btn { background: var(--ok); }
     .summary { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
     .stat {
@@ -133,7 +138,7 @@
 <body>
   <header>
     <h1>2C 功課缺交紀錄</h1>
-    <p>標記「冇交」「缺席冇交」或「未做好改正」· 資料雲端共用（Google Sheet）</p>
+    <p>標記「冇交」「缺席冇交」「未做好改正」；「補測」可並存 · 資料雲端共用（Google Sheet）</p>
   </header>
   <div class="wrap">
     <div id="setupBanner" class="banner" hidden>
@@ -159,7 +164,7 @@
         <label style="flex:1 1 220px">功課名稱 <input id="hwTitle" type="text" placeholder="例如：練習 3.2" /></label>
         <button id="addHwBtn" type="button">新增</button>
       </div>
-      <p class="note">新增後揀功課，再逐個同學標記狀態。改動會自動同步到雲端。</p>
+      <p class="note">新增後揀功課，再逐個同學標記狀態。「補測」可與冇交／缺席／未做好改正並存。改動會自動同步到雲端。</p>
     </div>
 
     <div class="card">
@@ -347,12 +352,29 @@
       return (hw && hw.records && hw.records[String(no)]) || "ok";
     }
 
+    function hasRetake(hw, no) {
+      return !!(hw && hw.retakes && hw.retakes[String(no)]);
+    }
+
     function setStatus(no, status) {
       const hw = currentHw();
       if (!hw) return;
       if (!hw.records) hw.records = {};
+      // Clearing status must NOT clear 補測 (retakes).
       if (status === "ok") delete hw.records[String(no)];
       else hw.records[String(no)] = status;
+      scheduleSave();
+      renderMark();
+      renderOverview();
+    }
+
+    function toggleRetake(no) {
+      const hw = currentHw();
+      if (!hw) return;
+      if (!hw.retakes) hw.retakes = {};
+      const key = String(no);
+      if (hw.retakes[key]) delete hw.retakes[key];
+      else hw.retakes[key] = true;
       scheduleSave();
       renderMark();
       renderOverview();
@@ -376,15 +398,23 @@
       return st === "miss" || st === "absent" || st === "amend";
     }
 
+    function itemDetailLabel(item) {
+      const parts = [];
+      if (isIssueStatus(item.status)) parts.push(statusLabel(item.status));
+      if (item.retake) parts.push("補測");
+      return parts.join("＋");
+    }
+
     function counts(hw) {
-      let miss = 0, absent = 0, amend = 0;
+      let miss = 0, absent = 0, amend = 0, retake = 0;
       STUDENTS.forEach((s) => {
         const st = statusOf(hw, s.no);
         if (st === "miss") miss += 1;
         if (st === "absent") absent += 1;
         if (st === "amend") amend += 1;
+        if (hasRetake(hw, s.no)) retake += 1;
       });
-      return { miss, absent, amend, ok: STUDENTS.length - miss - absent - amend };
+      return { miss, absent, amend, retake, ok: STUDENTS.length - miss - absent - amend };
     }
 
     function renderSelect() {
@@ -403,7 +433,7 @@
           const c = counts(h);
           const opt = document.createElement("option");
           opt.value = h.id;
-          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "／改正 " + c.amend + "）";
+          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "／改正 " + c.amend + "／補測 " + c.retake + "）";
           hwSelect.appendChild(opt);
         });
       if (!currentHwId || !state.homeworks.some((h) => h.id === currentHwId)) {
@@ -427,23 +457,34 @@
         '<div class="stat"><b>' + c.miss + '</b><span>冇交功課</span></div>' +
         '<div class="stat"><b>' + c.absent + '</b><span>缺席冇交</span></div>' +
         '<div class="stat"><b>' + c.amend + '</b><span>未做好改正</span></div>' +
+        '<div class="stat"><b>' + c.retake + '</b><span>補測</span></div>' +
         '<div class="stat"><b>' + c.ok + '</b><span>已交／正常</span></div>';
 
       studentGrid.innerHTML = "";
       STUDENTS.forEach((s) => {
         const st = statusOf(hw, s.no);
+        const rt = hasRetake(hw, s.no);
         const div = document.createElement("div");
-        div.className = "student" + (st === "miss" ? " miss" : st === "absent" ? " absent" : st === "amend" ? " amend" : "");
+        let cls = "student";
+        if (st === "miss") cls += " miss";
+        else if (st === "absent") cls += " absent";
+        else if (st === "amend") cls += " amend";
+        else if (rt) cls += " retake-only";
+        div.className = cls;
+        const badges =
+          (st === "miss" ? '<span class="badge miss">冇交</span> ' :
+           st === "absent" ? '<span class="badge absent">缺席冇交</span> ' :
+           st === "amend" ? '<span class="badge amend">未做好改正</span> ' : '') +
+          (rt ? '<span class="badge retake">補測</span>' : '');
         div.innerHTML =
           '<div class="no">2C-' + s.no + '</div>' +
           '<div class="name">' + s.name + '</div>' +
-          (st === "miss" ? '<span class="badge miss">冇交</span>' :
-           st === "absent" ? '<span class="badge absent">缺席冇交</span>' :
-           st === "amend" ? '<span class="badge amend">未做好改正</span>' : '') +
+          badges +
           '<div class="actions">' +
           '<button type="button" class="miss-btn" data-no="' + s.no + '" data-st="miss">冇交</button>' +
           '<button type="button" class="absent-btn" data-no="' + s.no + '" data-st="absent">缺席</button>' +
           '<button type="button" class="amend-btn" data-no="' + s.no + '" data-st="amend">未做好改正</button>' +
+          '<button type="button" class="retake-btn' + (rt ? '' : ' off') + '" data-no="' + s.no + '" data-action="retake">補測</button>' +
           '<button type="button" class="ok-btn" data-no="' + s.no + '" data-st="ok">清除</button>' +
           '</div>';
         studentGrid.appendChild(div);
@@ -455,49 +496,41 @@
         overviewBox.innerHTML = '<p class="empty">未有紀錄。</p>';
         return;
       }
-      const totals = {};
-      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, amend: 0, items: [] }; });
-      state.homeworks.forEach((h) => {
-        STUDENTS.forEach((s) => {
-          const st = statusOf(h, s.no);
-          if (isIssueStatus(st)) {
-            totals[s.no][st] += 1;
-            totals[s.no].items.push({ date: h.date, title: h.title, status: st });
-          }
-        });
-      });
+      const totals = collectByStudentTotals();
 
-      let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>未做好改正</th><th>詳情</th></tr></thead><tbody>';
+      let html = '<h2>按同學統計</h2><table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席冇交</th><th>未做好改正</th><th>補測</th><th>詳情</th></tr></thead><tbody>';
       let any = false;
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent && !t.amend) return;
+        if (!t.miss && !t.absent && !t.amend && !t.retake) return;
         any = true;
         const detail = t.items.map((i) =>
-          i.date + " " + i.title + "（" + statusLabel(i.status) + "）"
+          i.date + " " + i.title + "（" + itemDetailLabel(i) + "）"
         ).join("； ");
         html += '<tr><td>2C-' + s.no + '</td><td>' + s.name + '</td><td>' + t.miss +
-          '</td><td>' + t.absent + '</td><td>' + t.amend + '</td><td>' + detail + '</td></tr>';
+          '</td><td>' + t.absent + '</td><td>' + t.amend + '</td><td>' + t.retake + '</td><td>' + detail + '</td></tr>';
       });
       html += '</tbody></table>';
       overviewBox.innerHTML = any ? html : '<p class="empty">暫時未有缺交紀錄。</p>';
     }
 
     function exportCsv() {
-      const rows = [["日期", "功課", "學號", "姓名", "狀態"]];
+      const rows = [["日期", "功課", "學號", "姓名", "狀態", "補測"]];
       state.homeworks
         .slice()
         .sort((a, b) => (a.date > b.date ? 1 : -1))
         .forEach((h) => {
           STUDENTS.forEach((s) => {
             const st = statusOf(h, s.no);
-            if (st === "ok") return;
+            const rt = hasRetake(h, s.no);
+            if (st === "ok" && !rt) return;
             rows.push([
               h.date,
               h.title,
               "2C-" + s.no,
               s.name,
-              statusLabelCsv(st)
+              statusLabelCsv(st),
+              rt ? "是" : ""
             ]);
           });
         });
@@ -512,13 +545,15 @@
 
     function collectByStudentTotals() {
       const totals = {};
-      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, amend: 0, items: [] }; });
+      STUDENTS.forEach((s) => { totals[s.no] = { miss: 0, absent: 0, amend: 0, retake: 0, items: [] }; });
       state.homeworks.forEach((h) => {
         STUDENTS.forEach((s) => {
           const st = statusOf(h, s.no);
-          if (isIssueStatus(st)) {
-            totals[s.no][st] += 1;
-            totals[s.no].items.push({ date: h.date, title: h.title, status: st });
+          const rt = hasRetake(h, s.no);
+          if (isIssueStatus(st)) totals[s.no][st] += 1;
+          if (rt) totals[s.no].retake += 1;
+          if (isIssueStatus(st) || rt) {
+            totals[s.no].items.push({ date: h.date, title: h.title, status: st, retake: rt });
           }
         });
       });
@@ -535,12 +570,12 @@
 
     function exportByStudentCsv() {
       const totals = collectByStudentTotals();
-      const rows = [["學號", "姓名", "冇交次數", "缺席冇交次數", "未做好改正次數", "全部欠交功課"]];
+      const rows = [["學號", "姓名", "冇交次數", "缺席冇交次數", "未做好改正次數", "補測次數", "全部欠交功課"]];
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent && !t.amend) return;
+        if (!t.miss && !t.absent && !t.amend && !t.retake) return;
         const detail = t.items.map((i) =>
-          i.date + " " + i.title + "（" + statusLabel(i.status) + "）"
+          i.date + " " + i.title + "（" + itemDetailLabel(i) + "）"
         ).join("； ");
         rows.push([
           "2C-" + s.no,
@@ -548,6 +583,7 @@
           t.miss,
           t.absent,
           t.amend,
+          t.retake,
           detail
         ]);
       });
@@ -566,10 +602,10 @@
       const bodyRows = [];
       STUDENTS.forEach((s) => {
         const t = totals[s.no];
-        if (!t.miss && !t.absent && !t.amend) return;
+        if (!t.miss && !t.absent && !t.amend && !t.retake) return;
         const items = t.items.map((i) =>
           "<li>" + i.date + " " + escapeHtml(i.title) +
-          "（" + statusLabel(i.status) + "）</li>"
+          "（" + itemDetailLabel(i) + "）</li>"
         ).join("");
         bodyRows.push(
           "<tr>" +
@@ -578,6 +614,7 @@
           "<td class=\"n\">" + t.miss + "</td>" +
           "<td class=\"n\">" + t.absent + "</td>" +
           "<td class=\"n\">" + t.amend + "</td>" +
+          "<td class=\"n\">" + t.retake + "</td>" +
           "<td class=\"items\"><ul>" + items + "</ul></td>" +
           "</tr>"
         );
@@ -609,16 +646,16 @@
         "th{background:#f3f4f6;font-size:10pt;text-align:left}" +
         "td.no{width:8%;white-space:nowrap;font-weight:700}" +
         "td.name{width:11%;white-space:nowrap;font-weight:700}" +
-        "td.n{width:7%;text-align:center;white-space:nowrap}" +
-        "td.items{width:60%;font-size:9.5pt}" +
+        "td.n{width:6%;text-align:center;white-space:nowrap}" +
+        "td.items{width:54%;font-size:9.5pt}" +
         "td.items ul{margin:0;padding-left:1.05rem}" +
         "td.items li{margin:.05rem 0}" +
         ".hint{margin-top:.45rem;color:#666;font-size:9pt}" +
         "@media print{.no-print{display:none!important}}" +
         "</style></head><body>" +
         "<h1>2C 按學生 · 欠交一覽</h1>" +
-        "<p class=\"meta\">列印時間：" + stamp + " · 只顯示有欠交嘅同學 · 共 " + bodyRows.length + " 人</p>" +
-        "<table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席</th><th>未做好改正</th><th>全部欠交功課</th></tr></thead><tbody>" +
+        "<p class=\"meta\">列印時間：" + stamp + " · 只顯示有欠交／補測嘅同學 · 共 " + bodyRows.length + " 人</p>" +
+        "<table><thead><tr><th>學號</th><th>姓名</th><th>冇交</th><th>缺席</th><th>未做好改正</th><th>補測</th><th>全部欠交功課</th></tr></thead><tbody>" +
         bodyRows.join("") +
         "</tbody></table>" +
         "<p class=\"hint no-print\">預覽滿意就按「列印」。列印設定請揀 A4、橫向、縮放 100%。</p>" +
@@ -641,7 +678,7 @@
       if (!ready) return alert("雲端未就緒，請先設定 API。");
       const date = hwDate.value || todayStr();
       const title = (hwTitle.value || "").trim() || "功課";
-      const hw = { id: uid(), date, title, records: {} };
+      const hw = { id: uid(), date, title, records: {}, retakes: {} };
       state.homeworks.unshift(hw);
       currentHwId = hw.id;
       hwTitle.value = "";
@@ -669,6 +706,10 @@
     studentGrid.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-no]");
       if (!btn) return;
+      if (btn.dataset.action === "retake") {
+        toggleRetake(Number(btn.dataset.no));
+        return;
+      }
       setStatus(Number(btn.dataset.no), btn.dataset.st);
     });
 
