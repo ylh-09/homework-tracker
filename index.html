@@ -114,6 +114,32 @@
     th { color: var(--muted); font-size: 0.8rem; }
     .empty { color: var(--muted); padding: 1rem 0; }
     .note { font-size: 0.85rem; color: var(--muted); margin-top: 0.5rem; }
+    #hwSearchMeta { margin: 0 0 0.35rem; }
+    .hw-matches {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin: 0 0 0.75rem;
+      max-height: 14rem;
+      overflow: auto;
+    }
+    button.hw-match {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: #f9fafb;
+      color: var(--text);
+      border: 1px solid var(--line);
+      font-weight: 600;
+      font-size: 0.92rem;
+      padding: 0.45rem 0.7rem;
+    }
+    button.hw-match.active {
+      background: #eff6ff;
+      color: #1e40af;
+      border-color: #93c5fd;
+    }
     .sync {
       display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;
       font-size: 0.9rem; color: var(--muted);
@@ -130,7 +156,7 @@
       border-radius: 12px; padding: 0.75rem 0.9rem; margin-bottom: 1rem; font-size: 0.92rem;
     }
     @media (max-width: 640px) {
-      input[type="date"], input[type="text"], select { width: 100%; }
+      input[type="date"], input[type="text"], input[type="search"], select { width: 100%; }
       .row label { flex: 1 1 100%; }
     }
   </style>
@@ -138,7 +164,7 @@
 <body>
   <header>
     <h1>2C 功課缺交紀錄</h1>
-    <p>標記「冇交」「缺席冇交」「未做好改正」；「補測」可並存 · 資料雲端共用（Google Sheet）</p>
+    <p>標記「冇交」「缺席冇交」「未做好改正」；「補測」可並存 · 搜尋功課名稱或日期 · 資料雲端共用（Google Sheet）</p>
   </header>
   <div class="wrap">
     <div id="setupBanner" class="banner" hidden>
@@ -176,11 +202,17 @@
 
       <div id="tab-mark">
         <div class="row" style="margin-bottom:0.8rem">
+          <label style="flex:1 1 200px">搜尋功課
+            <input id="hwSearch" type="search" placeholder="例如：Quiz 8 或 11-16" autocomplete="off" enterkeyhint="search" />
+          </label>
           <label style="flex:1 1 260px">揀功課
             <select id="hwSelect"></select>
           </label>
           <button id="deleteHwBtn" class="danger" type="button">刪呢份功課</button>
         </div>
+        <p id="hwSearchMeta" class="note" hidden></p>
+        <div id="hwMatches" class="hw-matches" hidden></div>
+        <p id="hwSearchEmpty" class="empty" hidden>搵唔到符合嘅功課。</p>
         <div id="markSummary" class="summary"></div>
         <div id="studentGrid" class="grid"></div>
         <p id="markEmpty" class="empty" hidden>未有功課，請先新增。</p>
@@ -245,7 +277,11 @@
 
     const hwDate = document.getElementById("hwDate");
     const hwTitle = document.getElementById("hwTitle");
+    const hwSearch = document.getElementById("hwSearch");
     const hwSelect = document.getElementById("hwSelect");
+    const hwMatches = document.getElementById("hwMatches");
+    const hwSearchMeta = document.getElementById("hwSearchMeta");
+    const hwSearchEmpty = document.getElementById("hwSearchEmpty");
     const studentGrid = document.getElementById("studentGrid");
     const markSummary = document.getElementById("markSummary");
     const markEmpty = document.getElementById("markEmpty");
@@ -417,38 +453,123 @@
       return { miss, absent, amend, retake, ok: STUDENTS.length - miss - absent - amend };
     }
 
+    function normalizeSearch(str) {
+      return String(str || "")
+        .toLowerCase()
+        .replace(/\u3000/g, " ")
+        .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+    }
+
+    function sortedHomeworks() {
+      return state.homeworks
+        .slice()
+        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    }
+
+    function filteredHomeworks() {
+      const all = sortedHomeworks();
+      const q = normalizeSearch(hwSearch.value).trim();
+      if (!q) return all;
+      const tokens = q.split(/\s+/).filter(Boolean);
+      return all.filter((h) => {
+        const hay = normalizeSearch((h.date || "") + " " + (h.title || ""));
+        const compact = hay.replace(/\s+/g, "");
+        return tokens.every((token) => hay.includes(token) || compact.includes(token));
+      });
+    }
+
+    function homeworkOptionLabel(h) {
+      const c = counts(h);
+      return h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "／改正 " + c.amend + "／補測 " + c.retake + "）";
+    }
+
     function renderSelect() {
+      const matches = filteredHomeworks();
+      const filtering = normalizeSearch(hwSearch.value).trim().length > 0;
+      const deleteBtn = document.getElementById("deleteHwBtn");
       hwSelect.innerHTML = "";
+      hwMatches.innerHTML = "";
+      hwSearchEmpty.hidden = true;
+      hwSearchMeta.hidden = true;
+      hwMatches.hidden = true;
+
       if (!state.homeworks.length) {
         const opt = document.createElement("option");
         opt.value = "";
         opt.textContent = "（未有功課）";
         hwSelect.appendChild(opt);
+        deleteBtn.disabled = true;
         return;
       }
-      state.homeworks
-        .slice()
-        .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-        .forEach((h) => {
-          const c = counts(h);
-          const opt = document.createElement("option");
-          opt.value = h.id;
-          opt.textContent = h.date + " · " + h.title + "（冇交 " + c.miss + "／缺席 " + c.absent + "／改正 " + c.amend + "／補測 " + c.retake + "）";
-          hwSelect.appendChild(opt);
-        });
-      if (!currentHwId || !state.homeworks.some((h) => h.id === currentHwId)) {
-        currentHwId = state.homeworks[0].id;
+
+      if (filtering && matches.length === 1) currentHwId = matches[0].id;
+
+      if (filtering && !matches.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "（沒有符合的功課）";
+        hwSelect.appendChild(opt);
+        hwSearchEmpty.hidden = false;
+        hwSearchEmpty.textContent = "搵唔到符合「" + hwSearch.value.trim() + "」嘅功課。清空搜尋就可以睇返全部功課。";
+        deleteBtn.disabled = true;
+        return;
       }
-      hwSelect.value = currentHwId;
+
+      if (!filtering && !matches.some((h) => h.id === currentHwId)) {
+        currentHwId = matches[0].id;
+      }
+
+      if (filtering && !matches.some((h) => h.id === currentHwId)) {
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "（" + matches.length + " 份符合，請揀）";
+        hwSelect.appendChild(placeholder);
+      }
+
+      matches.forEach((h) => {
+        const opt = document.createElement("option");
+        opt.value = h.id;
+        opt.textContent = homeworkOptionLabel(h);
+        hwSelect.appendChild(opt);
+      });
+
+      if (matches.some((h) => h.id === currentHwId)) hwSelect.value = currentHwId;
+      deleteBtn.disabled = !matches.some((h) => h.id === currentHwId);
+
+      if (!filtering) return;
+
+      hwSearchMeta.hidden = false;
+      hwSearchMeta.textContent = "搵到 " + matches.length + " 份功課";
+      hwMatches.hidden = false;
+      matches.forEach((h) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "hw-match" + (h.id === currentHwId ? " active" : "");
+        btn.dataset.hwId = h.id;
+        btn.textContent = homeworkOptionLabel(h);
+        hwMatches.appendChild(btn);
+      });
+      const activeBtn = hwMatches.querySelector(".hw-match.active");
+      if (activeBtn) {
+        const top = activeBtn.offsetTop;
+        const bottom = top + activeBtn.offsetHeight;
+        if (top < hwMatches.scrollTop) hwMatches.scrollTop = top;
+        else if (bottom > hwMatches.scrollTop + hwMatches.clientHeight) {
+          hwMatches.scrollTop = bottom - hwMatches.clientHeight;
+        }
+      }
     }
 
     function renderMark() {
       renderSelect();
+      const filtering = normalizeSearch(hwSearch.value).trim().length > 0;
+      const matches = filteredHomeworks();
       const hw = currentHw();
-      if (!hw) {
+      const showStudents = hw && (!filtering || matches.some((h) => h.id === hw.id));
+      if (!showStudents) {
         studentGrid.innerHTML = "";
         markSummary.innerHTML = "";
-        markEmpty.hidden = false;
+        markEmpty.hidden = !!hw;
         return;
       }
       markEmpty.hidden = true;
@@ -682,13 +803,35 @@
       state.homeworks.unshift(hw);
       currentHwId = hw.id;
       hwTitle.value = "";
+      hwSearch.value = "";
       scheduleSave();
       renderMark();
       renderOverview();
     });
 
+    hwSearch.addEventListener("input", () => {
+      renderMark();
+    });
+
+    hwSearch.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const matches = filteredHomeworks();
+      if (!matches.length) return;
+      currentHwId = matches[0].id;
+      renderMark();
+    });
+
+    hwMatches.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-hw-id]");
+      if (!btn) return;
+      currentHwId = btn.dataset.hwId;
+      renderMark();
+    });
+
     hwSelect.addEventListener("change", () => {
-      currentHwId = hwSelect.value || null;
+      if (!hwSelect.value) return;
+      currentHwId = hwSelect.value;
       renderMark();
     });
 
